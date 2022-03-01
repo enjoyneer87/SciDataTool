@@ -75,19 +75,22 @@ def get_data_along(self, *args, unit="SI", is_norm=False, axis_data=[]):
                 "freqs",
                 "wavenumber",
             ]:
-                symmetries = self.axes[index].symmetries
+                symmetries = self.axes[index].symmetries.copy()
             else:
                 symmetries = dict()
-            Axes.append(
-                Data1D(
-                    name=name,
-                    unit=ax_unit,
-                    values=axis_values,
-                    is_components=is_components,
-                    normalizations=self.axes[index].normalizations,
-                    symmetries=symmetries,
-                ).to_linspace()
-            )
+            Axis = Data1D(
+                name=name,
+                unit=ax_unit,
+                values=axis_values,
+                is_components=is_components,
+                normalizations=self.axes[index].normalizations.copy(),
+                symmetries=symmetries,
+            ).to_linspace()
+            if hasattr(self.axes[index], "sort_indices") and hasattr(
+                Axis, "sort_indices"
+            ):
+                Axis.sort_indices = self.axes[index].sort_indices
+            Axes.append(Axis)
 
     # Update unit if dB/dBA conversion
     if "dB" in unit:
@@ -107,6 +110,6 @@ def get_data_along(self, *args, unit="SI", is_norm=False, axis_data=[]):
         symbol=self.symbol,
         axes=Axes,
         values=values,
-        normalizations=self.normalizations,
+        normalizations=self.normalizations.copy(),
         is_real=self.is_real,
     )

@@ -1,11 +1,16 @@
+from operator import is_
 from SciDataTool.Functions.Plot.plot_2D import plot_2D
 from SciDataTool.Functions.Plot import (
     unit_dict,
     norm_dict,
     axes_dict,
+    fft_dict,
     COLORS,
 )
 from SciDataTool.Functions.Load.import_class import import_class
+from SciDataTool.Functions.fix_axes_order import fix_axes_order
+from SciDataTool.Functions.parser import read_input_strings
+from SciDataTool.Classes.Norm_indices import Norm_indices
 from numpy import (
     squeeze,
     split,
@@ -32,8 +37,6 @@ def plot_2D_Data(
     data_list=[],
     legend_list=[],
     color_list=None,
-    curve_colors=None,
-    phase_colors=None,
     linestyles=None,
     linewidth_list=[2],
     save_path=None,
@@ -62,8 +65,10 @@ def plot_2D_Data(
     font_size_title=12,
     font_size_label=10,
     font_size_legend=8,
+    is_show_legend=True,
     is_outside_legend=False,
     is_frame_legend=True,
+    is_indlabels=False,
 ):
     """Plots a field as a function of time
 
@@ -134,63 +139,66 @@ def plot_2D_Data(
     if len(arg_list) == 1 and type(arg_list[0]) == tuple:
         arg_list = arg_list[0]
 
-    if color_list == []:
+    axes_names = [
+        axis.name for axis in read_input_strings(arg_list, axis_data=axis_data)
+    ]
+
+    # Fix axes order
+    arg_list_along = fix_axes_order([axis.name for axis in self.get_axes()], arg_list)
+
+    # In case of 1D fft, keep only positive wavenumbers
+    for i, arg in enumerate(arg_list_along):
+        if "wavenumber" in arg and "=" not in arg and "[" not in arg:
+            liste = list(arg_list_along)
+            liste[i] = arg.replace("wavenumber", "wavenumber>0")
+            arg_list_along = tuple(liste)
+
+    if color_list == [] or color_list is None:
         color_list = COLORS
+
+    new_color_list = color_list.copy()
 
     # Set unit
     if unit == "SI":
         unit = self.unit
 
-    # Detect if is fft, build first title part and ylabel
+    # Detect if is fft, build ylabel
+    if "dB" in unit and "ref" in self.normalizations:
+        unit_str = (
+            "["
+            + unit
+            + " re. "
+            + str(self.normalizations["ref"].ref)
+            + " $"
+            + self.unit
+            + "$]"
+        )
+    else:
+        unit_str = r"$[" + unit + "]$"
     is_fft = False
-    if any("wavenumber" in s for s in arg_list) or any("freqs" in s for s in arg_list):
+    if (
+        any("wavenumber" in s for s in arg_list) or any("freqs" in s for s in arg_list)
+    ) and type_plot != "curve":
         is_fft = True
-        if "dB" in unit:
-            unit_str = (
-                "["
-                + unit
-                + " re. "
-                + str(self.normalizations["ref"].ref)
-                + self.unit
-                + "]"
-            )
-        else:
-            unit_str = "[" + unit + "]"
         if self.symbol == "Magnitude":
             if ylabel is None:
-                ylabel = "Magnitude " + r"$[" + unit + "]$"
+                ylabel = "Magnitude " + unit_str
         else:
             if ylabel is None:
                 ylabel = r"$|\widehat{" + self.symbol + "}|$ " + unit_str
-        if data_list == []:
-            title1 = "FFT of " + self.name.lower() + " "
-        else:
-            title1 = "Comparison of " + self.name.lower() + " FFT "
     else:
-        if data_list == []:
-            # title = data.name.capitalize() + " for " + ', '.join(arg_list_str)
-            title1 = self.name.capitalize() + " "
-        else:
-            # title = data.name.capitalize() + " for " + ', '.join(arg_list_str)
-            title1 = "Comparison of " + self.name.lower() + " "
         if is_norm:
             if ylabel is None:
                 ylabel = (
-                    r"$\frac{"
-                    + self.symbol
-                    + "}{"
-                    + self.symbol
-                    + "_0}\, ["
-                    + unit
-                    + "]$"
+                    r"$\frac{" + self.symbol + "}{" + self.symbol + "_0}\,$" + unit_str
                 )
         else:
             if self.symbol == "Magnitude":
                 if ylabel is None:
-                    ylabel = "Magnitude " + r"$[" + unit + "]$"
+                    ylabel = "Magnitude " + unit_str
             else:
                 if ylabel is None:
-                    ylabel = r"$" + self.symbol + "\, [" + unit + "]$"
+                    ylabel = r"$" + self.symbol + "\,$" + unit_str
 
     # Extract field and axes
     Xdatas = []
@@ -199,7 +207,7 @@ def plot_2D_Data(
     for i, d in enumerate(data_list2):
         if is_fft or "dB" in unit:
             result = d.get_magnitude_along(
-                arg_list, axis_data=axis_data, unit=unit, is_norm=is_norm
+                *arg_list_along, axis_data=axis_data, unit=unit, is_norm=is_norm
             )
             if i == 0:
                 axes_list = result.pop("axes_list")
@@ -207,7 +215,7 @@ def plot_2D_Data(
                 result_0 = result
         else:
             result = d.get_along(
-                arg_list, axis_data=axis_data, unit=unit, is_norm=is_norm
+                *arg_list_along, axis_data=axis_data, unit=unit, is_norm=is_norm
             )
             if i == 0:
                 axes_list = result.pop("axes_list")
@@ -215,20 +223,22 @@ def plot_2D_Data(
                 result_0 = result
         Ydatas.append(result.pop(d.symbol))
         # in string case not overlay, Xdatas is a linspace
-        if axes_list[0].is_components and axes_list[0].extension != "list":
+        if (
+            axes_list[list(result.keys()).index(axes_names[0])].is_components
+            and axes_list[list(result.keys()).index(axes_names[0])].extension != "list"
+        ):
             xdata = linspace(
-                0, len(result[list(result)[0]]) - 1, len(result[list(result)[0]])
+                0, len(result[axes_names[0]]) - 1, len(result[axes_names[0]])
             )
         else:
-            xdata = result[list(result)[0]]
+            xdata = result[axes_names[0]]
         Xdatas.append(xdata)
 
-    # Build xlabel and title parts 2 and 3
-    title2 = ""
-    title3 = "for "
+    # Build xlabel and title
+    title1 = self.name[0].capitalize() + self.name[1:] + " "
+    title2 = "for "
     for axis in axes_list:
-        # Title part 2
-        if axis.unit in norm_dict:
+        if axis.unit in norm_dict and axis.unit != "Hz":
             name = norm_dict[axis.unit].split(" [")[0]
         elif axis.name in axes_dict:
             name = axes_dict[axis.name]
@@ -243,18 +253,18 @@ def plot_2D_Data(
                 "antiperiod",
                 "smallestperiod",
                 "axis_data",
+                "list",
             ]
             and len(axis.values) > 1
             or (len(axis.values) == 1 and len(axes_list) == 1)
         ):
-            # title2 = "over " + name.lower()
             if axis.unit == "SI":
                 if axis.name in unit_dict:
                     axis_unit = unit_dict[axis.name]
                 else:
                     axis_unit = axis.unit
                 if xlabel is None:
-                    xlabel = name.capitalize() + " [" + axis_unit + "]"
+                    xlabel = name[0].capitalize() + name[1:] + " [" + axis_unit + "]"
                 main_axis_name = name
             elif axis.unit in norm_dict:
                 if xlabel is None:
@@ -266,7 +276,7 @@ def plot_2D_Data(
             else:
                 axis_unit = axis.unit
                 if xlabel is None:
-                    xlabel = name.capitalize() + " [" + axis_unit + "]"
+                    xlabel = name[0].capitalize() + name[1:] + " [" + axis_unit + "]"
                 main_axis_name = name
             if (
                 axis.name == "angle"
@@ -276,41 +286,53 @@ def plot_2D_Data(
                 xticks = [i * round(np_max(axis.values) / 6) for i in range(7)]
             else:
                 xticks = None
-            if axis.is_components and axes_list[0].extension != "list":
-                xticklabels = result[list(result)[0]]
+            if (
+                axes_list[list(result.keys()).index(axes_names[0])].is_components
+                and not self.get_axes()[0].is_overlay
+            ):
+                xticklabels = result[axes_names[0]]
                 xticks = Xdatas[0]
             else:
                 xticklabels = None
+                xticks = None
         else:
             is_display = True
             if axis.is_pattern and len(axis.values) == 1:
                 is_display = False
             if is_display:
-                if axis.unit == "SI":
+                if axis.corr_unit == "SI":
                     if axis.name in unit_dict:
                         axis_unit = unit_dict[axis.name]
                     else:
                         axis_unit = axis.unit
-                elif axis.unit in norm_dict:
-                    axis_unit = norm_dict[axis.unit]
+                elif axis.corr_unit in norm_dict and axis.corr_unit != "Hz":
+                    axis_unit = norm_dict[axis.corr_unit]
                 else:
-                    axis_unit = axis.unit
+                    axis_unit = axis.corr_unit
 
                 if isinstance(result_0[axis.name], str):
-                    title3 += name + "=" + result_0[axis.name]
+                    title2 += name + "=" + result_0[axis.name]
                 else:
-                    axis_str = array2string(
-                        result_0[axis.name], formatter={"float_kind": "{:.3g}".format}
-                    ).replace(" ", ", ")
+                    if isinstance(result_0[axis.name][0], str):
+                        axis_str = result_0[axis.name][0]
+                    else:
+                        if result_0[axis.name][0] > 10:
+                            fmt = "{:.5g}"
+                        else:
+                            fmt = "{:.3g}"
+                        axis_str = array2string(
+                            result_0[axis.name], formatter={"float_kind": fmt.format}
+                        ).replace(" ", ", ")
+
                     if len(result_0[axis.name]) == 1:
                         axis_str = axis_str.strip("[]")
 
-                    title3 += (
+                    title2 += (
                         name + "=" + axis_str.rstrip(", ") + " [" + axis_unit + "], "
                     )
 
-    # Title part 4 containing axes that are here but not involved in requested axes
-    title4 = ""
+    # Title part 3 containing axes that are here but not involved in requested axes
+    title3 = ""
     for axis_name in axes_dict_other:
         is_display = True
         for axis in self.axes:
@@ -318,39 +340,41 @@ def plot_2D_Data(
                 if isinstance(axis, DataPattern) and len(axis.unique_indices) == 1:
                     is_display = False
         if is_display:
-            title4 += (
-                axis_name
-                + "="
-                + array2string(
-                    axes_dict_other[axis_name][0],
-                    formatter={"float_kind": "{:.3g}".format},
-                ).replace(" ", ", ")
-                + " ["
-                + axes_dict_other[axis_name][1]
-                + "], "
-            )
+            if isinstance(axes_dict_other[axis_name][0], str):
+                title3 += axis_name + "=" + axes_dict_other[axis_name][0]
+            else:
+                if axes_dict_other[axis_name][0] > 10:
+                    fmt = "{:.5g}"
+                else:
+                    fmt = "{:.3g}"
+                title3 += (
+                    axis_name
+                    + "="
+                    + array2string(
+                        axes_dict_other[axis_name][0],
+                        formatter={"float_kind": fmt.format},
+                    ).replace(" ", ", ")
+                    + " ["
+                    + axes_dict_other[axis_name][1]
+                    + "], "
+                )
 
-    if title3 == "for " and title4 == "":
-        title3 = ""
+    if title2 == "for " and title3 == "":
+        title2 = ""
 
-    if title is None:
-        # Concatenate all title parts
-        title = title1 + title2 + title3 + title4
-
-        # Remove last coma due to title3 or title4
-        title = title.rstrip(", ")
-
-        # Remove dimless and quotes
-        title = title.replace("[]", "")
-        title = title.replace("'", "")
+    # Detect discontinuous axis (Norm_indices) to use bargraph
+    for axis in axes_list:
+        if axis.unit in self.axes[axis.index].normalizations:
+            if isinstance(
+                self.axes[axis.index].normalizations[axis.unit], Norm_indices
+            ):
+                type_plot = "bargraph"
 
     # Detect how many curves are overlaid, build legend and color lists
     if legend_list == [] and data_list != []:
         legend_list = [d.name for d in data_list2]
     elif legend_list == []:
         legend_list = ["" for d in data_list2]
-    # else:
-    #     legend_list = ["[" + leg + "] " for leg in legend_list]
     legends = []
     # Prepare colors
     linestyle_list = linestyles
@@ -373,19 +397,25 @@ def plot_2D_Data(
                     axis_unit = axis.unit
                 if len(d.axes[axis.index].get_values()) > 1:
                     legends += [
-                        legend_list[i]
-                        + axis.name
-                        + "="
-                        + axis.values.tolist()[j]
-                        + " "
-                        + axis_unit
-                        if isinstance(axis.values.tolist()[j], str)
-                        else legend_list[i]
-                        + axis.name
-                        + "="
-                        + "%.3g" % axis.values.tolist()[j]
-                        + " "
-                        + axis_unit
+                        (
+                            legend_list[i]
+                            + " "
+                            + axis.name
+                            + "="
+                            + axis.values.tolist()[j]
+                            + " "
+                            + axis_unit
+                            if isinstance(axis.values.tolist()[j], str)
+                            else legend_list[i]
+                            + " "
+                            + axis.name
+                            + "="
+                            + "%.3g" % axis.values.tolist()[j]
+                            + " "
+                            + axis_unit
+                        )
+                        .replace("SI", "")
+                        .replace(" []", "")
                         for j in range(n_curves)
                     ]
                 else:
@@ -393,6 +423,11 @@ def plot_2D_Data(
 
         if not is_overlay:
             legends += [legend_list[i]]
+            # Adjust colors in non overlay case with overlay axis
+            if len(data_list2) > 1:
+                for axis in self.get_axes():
+                    if axis.is_overlay and len(color_list) > len(axis.values):
+                        new_color_list[1:] = color_list[len(axis.values) :]
 
     # Split Ydatas if the plot overlays several curves
     if is_overlay:
@@ -410,6 +445,32 @@ def plot_2D_Data(
         for i in range(len(data_list2)):
             Xdata += [Xdatas[i] for x in range(n_curves)]
         Xdatas = Xdata
+
+    # Finish title
+    if title is None:
+
+        # Reformat in case of operation
+        for ope in ["max", "min", "mean"]:
+            if "=" + ope in title2:
+                title2 = ""
+                title1 = (
+                    ope[0].capitalize() + ope[1:] + " " + title1[0].lower() + title1[1:]
+                )
+
+        # Concatenate all title parts
+        if is_overlay:
+            title = title1 + title3
+        else:
+            title = title1 + title2 + title3
+
+        # Remove last coma due to title2 or title3
+        title = title.rstrip(", ")
+
+        # Remove dimless and quotes
+        title = title.replace("SI", "").replace("[]", "").replace("'", "")
+
+    xlabel = xlabel.replace("SI", "").replace(" []", "")  # Remove dimless units
+    ylabel = ylabel.replace("SI", "").replace(" []", "")  # Remove dimless units
 
     # Overall computation
     if overall_axes != []:
@@ -437,16 +498,19 @@ def plot_2D_Data(
             result = self.get_along(*arg_list_ovl, unit=unit)
         Y_overall = result[self.symbol]
         # in string case not overlay, Xdatas is a linspace
-        if axes_list[0].is_components and axes_list[0].extension != "list":
+        if (
+            axes_list[list(result.keys()).index(axes_names[0])].is_components
+            and axes_list[list(result.keys()).index(axes_names[0])].extension != "list"
+        ):
             xdata = linspace(
-                0, len(result[list(result)[0]]) - 1, len(result[list(result)[0]])
+                0, len(result[axes_names[0]]) - 1, len(result[axes_names[0]])
             )
         else:
             xdata = result[list(result)[0]]
         Ydatas.insert(0, Y_overall)
         Xdatas.insert(0, xdata)
-        color_list = color_list.copy()
-        color_list.insert(0, "#000000")
+        new_color_list = new_color_list.copy()
+        new_color_list.insert(0, "#000000")
         legends.insert(0, "Overall")
 
     if "dB" in unit:  # Replace <=0 by nans
@@ -467,7 +531,7 @@ def plot_2D_Data(
             indices = [
                 ind
                 for ind, y in enumerate(Ydatas[0])
-                if abs(y) > 10 * log10(thresh) + abs(np_max(Ydatas[0]))
+                if abs(y) > max(10 * log10(thresh) + abs(np_max(Ydatas[0])), 0)
             ]
         else:
             if Ydatas[0].size == 1:
@@ -484,13 +548,22 @@ def plot_2D_Data(
             if len(xticks) > 1:
                 if x_min is None:
                     x_min = xticks[0]
+                else:
+                    x_min = max(x_min, xticks[0])
                 if x_max is None:
                     x_max = xticks[-1]
+                else:
+                    x_max = min(x_max, xticks[-1])
             else:
                 if x_min is None:
                     x_min = np_min(freqs)
+                else:
+                    x_min = max(x_min, np_min(freqs))
                 if x_max is None:
                     x_max = np_max(freqs)
+                else:
+                    x_max = min(x_max, np_max(freqs))
+
         else:
             if x_min is None:
                 x_min = np_min(freqs)
@@ -500,7 +573,16 @@ def plot_2D_Data(
         x_min = x_min - x_max * 0.05
         x_max = x_max * 1.05
 
-        if not is_auto_ticks:
+        if (
+            len(xticks) == 0
+            or (
+                len(xticks) > 20
+                and not axes_list[
+                    list(result.keys()).index(axes_names[0])
+                ].is_components
+            )
+            or not is_auto_ticks
+        ):
             xticks = None
 
         # Force bargraph for fft if type_graph not specified
@@ -522,7 +604,7 @@ def plot_2D_Data(
             Xdatas,
             Ydatas,
             legend_list=legends,
-            color_list=color_list,
+            color_list=new_color_list,
             linestyle_list=linestyle_list,
             linewidth_list=linewidth_list,
             fig=fig,
@@ -550,8 +632,10 @@ def plot_2D_Data(
             font_size_title=font_size_title,
             font_size_label=font_size_label,
             font_size_legend=font_size_legend,
+            is_show_legend=is_show_legend,
             is_outside_legend=is_outside_legend,
             is_frame_legend=is_frame_legend,
+            is_indlabels=is_indlabels,
         )
 
     else:
@@ -564,7 +648,7 @@ def plot_2D_Data(
             Xdatas,
             Ydatas,
             legend_list=legends,
-            color_list=color_list,
+            color_list=new_color_list,
             fig=fig,
             ax=ax,
             title=title,
@@ -591,7 +675,8 @@ def plot_2D_Data(
             font_size_title=font_size_title,
             font_size_label=font_size_label,
             font_size_legend=font_size_legend,
-            is_show_legend=True,
+            is_show_legend=is_show_legend,
             is_outside_legend=is_outside_legend,
             is_frame_legend=is_frame_legend,
+            is_indlabels=is_indlabels,
         )

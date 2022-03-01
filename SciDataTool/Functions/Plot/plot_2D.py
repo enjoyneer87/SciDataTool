@@ -54,6 +54,7 @@ def plot_2D(
     scale=None,
     width=0.005,
     symbol=".",
+    is_indlabels=False,
 ):
     """Plots a 2D graph (curve, bargraph or barchart) comparing fields in Ydatas
 
@@ -193,8 +194,15 @@ def plot_2D(
             )
         if xticks is not None:
             ax.xaxis.set_ticks(xticks)
+            plt.xticks(rotation=90, ha="center", va="top")
         if xticklabels is not None:
-            ax.set_xticklabels(xticklabels, rotation=90)
+            if is_indlabels:
+                ax.set_xticklabels([i + 1 for i in range(len(xticklabels))], rotation=0)
+                ax.annotate(
+                    xticklabels, (Xdatas[i_Xdatas[i]], Ydatas[i]), visible=False
+                )
+            else:
+                ax.set_xticklabels(xticklabels, rotation=90)
     elif type_plot == "bargraph":
         positions = range(-ndatas + 1, ndatas, 2)
         if x_max is not None:
@@ -317,6 +325,17 @@ def plot_2D(
                 markeredgecolor=color_list[i],
                 markersize=10,
             )
+        if xticks is not None:
+            ax.xaxis.set_ticks(xticks)
+            plt.xticks(rotation=90, ha="center", va="top")
+        if xticklabels is not None:
+            if is_indlabels:
+                ax.set_xticklabels([i + 1 for i in range(len(xticklabels))], rotation=0)
+                ax.annotate(
+                    xticklabels, (Xdatas[i_Xdatas[i]], Ydatas[i]), visible=False
+                )
+            else:
+                ax.set_xticklabels(xticklabels, rotation=90)
     elif type_plot == "point":
         for i in range(ndatas):
             ax.plot(
@@ -331,6 +350,16 @@ def plot_2D(
                 picker=True,
                 pickradius=5,
             )
+        if xticks is not None:
+            ax.xaxis.set_ticks(xticks)
+            plt.xticks(rotation=90, ha="center", va="top")
+        if xticklabels is not None:
+            if is_indlabels:
+                ax.set_xticklabels([i + 1 for i in range(len(xticklabels))], rotation=0)
+                for j, xdata in enumerate(Xdatas[i_Xdatas[i]]):
+                    ax.annotate(xticklabels[j], (xdata, Ydatas[i][j]), visible=False)
+            else:
+                ax.set_xticklabels(xticklabels, rotation=90)
     elif type_plot == "barStackResultant":
         data = Ydatas[0:-1]
 
@@ -418,12 +447,12 @@ def plot_2D(
         else:
             ax.legend(
                 prop={"family": font_name, "size": font_size_legend},
-                loc="center left",
                 frameon=is_frame_legend,
             )
 
     if not is_show_legend:
-        ax.get_legend().remove()
+        if ax.get_legend() is not None:
+            ax.get_legend().remove()
 
     # plt.tight_layout()
     for item in (

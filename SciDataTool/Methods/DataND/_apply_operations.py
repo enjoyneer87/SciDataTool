@@ -1,9 +1,10 @@
-from numpy import abs as np_abs
+from numpy import abs as np_abs, nanmax, nanmin
 
 from SciDataTool.Functions.derivation_integration import (
     derivate,
     integrate,
     integrate_local,
+    integrate_local_pattern,
     antiderivate,
 )
 from SciDataTool.Functions.sum_mean import (
@@ -14,7 +15,7 @@ from SciDataTool.Functions.sum_mean import (
 )
 
 
-def _apply_operations(self, values, axes_list, is_magnitude, unit):
+def _apply_operations(self, values, axes_list, is_magnitude, unit, corr_unit):
     """Returns the values of the field transformed or converted
     Parameters
     ----------
@@ -51,28 +52,54 @@ def _apply_operations(self, values, axes_list, is_magnitude, unit):
         else:
             is_phys = False
             is_freqs = False
+        if axis_requested.name in ["freqs", "frequency", "wavenumber"]:
+            is_fft = True
+        else:
+            is_fft = False
+        # max over max axes
+        if extension in "max":
+            values = nanmax(values, axis=index)
+        # min over max axes
+        elif extension in "min":
+            values = nanmin(values, axis=index)
         # sum over sum axes
-        if extension in "sum":
-            values = my_sum(values, index, Nper, is_aper, unit)
+        elif extension in "sum":
+            values = my_sum(
+                values, index, Nper, is_aper, unit, is_fft, corr_unit=corr_unit
+            )
         # root sum square over rss axes
         elif extension == "rss":
             values = root_sum_square(
-                values, ax_val, index, Nper, is_aper, is_phys, unit
+                values,
+                ax_val,
+                index,
+                Nper,
+                is_aper,
+                is_phys,
+                unit,
+                is_fft,
+                corr_unit=corr_unit,
             )
         # mean value over mean axes
         elif extension == "mean":
-            values = my_mean(values, ax_val, index, Nper, is_aper, is_phys)
+            values = my_mean(values, ax_val, index, Nper, is_aper, is_phys, is_fft)
         # RMS over rms axes
         elif extension == "rms":
-            values = root_mean_square(values, ax_val, index, Nper, is_aper, is_phys)
+            values = root_mean_square(
+                values, ax_val, index, Nper, is_aper, is_phys, is_fft
+            )
         # integration over integration axes
         elif extension == "integrate":
             values = integrate(values, ax_val, index, Nper, is_aper, is_phys)
         # local integration over integration axes
         elif extension == "integrate_local":
-            values = integrate_local(
-                values, ax_val, index, Nper, is_aper, is_phys, is_freqs
-            )
+            if axis_requested.name == "z":
+                values, ax_val = integrate_local_pattern(values, ax_val, index)
+                axis_requested.values = ax_val
+            else:
+                values = integrate_local(
+                    values, ax_val, index, Nper, is_aper, is_phys, is_freqs
+                )
         # antiderivation over antiderivation axes
         elif extension == "antiderivate":
             values = antiderivate(

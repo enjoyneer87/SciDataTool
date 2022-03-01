@@ -98,7 +98,7 @@ def plot_3D(
     is_contour : bool
         True to show contour line if type_plot = "pcolor"
     is_shading_flat : bool
-        True to use flat shading instead of Gouraud
+        True to use flat shading instead of Gouraud for pcolormesh or bilinear for pcolor
     save_path : str
         full path including folder, name and extension of the file to save if save_path is not None
     is_show_fig : bool
@@ -177,6 +177,7 @@ def plot_3D(
         ax.zaxis.labelpad = 5
         if xticks is not None:
             ax.xaxis.set_ticks(xticks)
+            plt.xticks(rotation=90, ha="center", va="top")
         if yticks is not None:
             ax.yaxis.set_ticks(yticks)
         if xticklabels is not None:
@@ -204,6 +205,7 @@ def plot_3D(
         ax.zaxis.labelpad = 5
         if xticks is not None:
             ax.xaxis.set_ticks(xticks)
+            plt.xticks(rotation=90, ha="center", va="top")
         if yticks is not None:
             ax.yaxis.set_ticks(yticks)
         if xticklabels is not None:
@@ -220,6 +222,10 @@ def plot_3D(
         if is_logscale_z:
             ax.zscale("log")
     elif type_plot == "pcolor":
+        if is_shading_flat:
+            interpolation = None
+        else:
+            interpolation = "bilinear"
         Zdata[Zdata < z_min] = z_min
         Zdata[Zdata > z_max] = z_max
         # Handle descending order axes (e.g. spectrogram of run-down in freq/rpm map)
@@ -231,7 +237,7 @@ def plot_3D(
             Zdata = Zdata[::-1, :]
         im = NonUniformImage(
             ax,
-            interpolation="bilinear",
+            interpolation=interpolation,
             extent=(x_min, x_max, y_max, y_min),
             cmap=colormap,
             picker=10,
@@ -248,6 +254,7 @@ def plot_3D(
             l.set_family(font_name)
         if xticks is not None:
             ax.xaxis.set_ticks(xticks)
+            plt.xticks(rotation=90, ha="center", va="top")
         if yticks is not None:
             ax.yaxis.set_ticks(yticks)
         if xticklabels is not None:
@@ -279,6 +286,7 @@ def plot_3D(
             l.set_family(font_name)
         if xticks is not None:
             ax.xaxis.set_ticks(xticks)
+            plt.xticks(rotation=90, ha="center", va="top")
         if yticks is not None:
             ax.yaxis.set_ticks(yticks)
         if xticklabels is not None:
@@ -307,6 +315,7 @@ def plot_3D(
             l.set_family(font_name)
         if xticks is not None:
             ax.xaxis.set_ticks(xticks)
+            plt.xticks(rotation=90, ha="center", va="top")
         if yticks is not None:
             ax.yaxis.set_ticks(yticks)
         if xticklabels is not None:

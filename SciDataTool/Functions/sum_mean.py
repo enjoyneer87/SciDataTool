@@ -4,7 +4,7 @@ from SciDataTool.Functions.derivation_integration import integrate
 from SciDataTool.Functions.conversions import convert
 
 
-def my_sum(values, index, Nper, is_aper, unit):
+def my_sum(values, index, Nper, is_aper, unit, is_fft, corr_unit="SI"):
     """Returns the arithmetic sum of values along given axis
 
     Parameters
@@ -32,20 +32,27 @@ def my_sum(values, index, Nper, is_aper, unit):
     else:
         # To sum dB or dBA
         if "dB" in unit:
+            if is_fft:  # No need to multiply by Nper in fft case
+                Nper = 1
+            if Nper is None:
+                # Set Nper to 1 in case of non-periodic axis
+                Nper = 1
             values = 10 * np.log10(
-                np.sum(10 ** (values / 10), axis=index, keepdims=True)
-            )
+                np.nansum(10 ** (values / 10), axis=index, keepdims=True)
+            ) + 10 * np.log10(Nper)
         else:
+            if is_fft:  # No need to multiply by Nper in fft case
+                Nper = 1
             # Take sum value multiplied by periodicity
             if Nper is None:
                 # Set Nper to 1 in case of non-periodic axis
                 Nper = 1
-            values = Nper * np.sum(values, axis=index, keepdims=True)
+            values = Nper * np.nansum(values, axis=index, keepdims=True)
 
     return values
 
 
-def my_mean(values, ax_val, index, Nper, is_aper, is_phys):
+def my_mean(values, ax_val, index, Nper, is_aper, is_phys, is_fft):
     """Returns the mean (arithmetic or integral) of values along given axis
 
     Parameters
@@ -82,16 +89,18 @@ def my_mean(values, ax_val, index, Nper, is_aper, is_phys):
             shape0 = [s for ii, s in enumerate(shape) if ii != index]
             values = np.zeros(shape0, dtype=values.dtype)
         else:
+            if is_fft:  # No need to multiply by Nper in fft case
+                Nper = 1
             # Take mean value multiplied by periodicity
             if Nper is None:
                 # Set Nper to 1 in case of non-periodic axis
                 Nper = 1
-            values = Nper * np.mean(values, axis=index)
+            values = Nper * np.nanmean(values, axis=index)
 
     return values
 
 
-def root_mean_square(values, ax_val, index, Nper, is_aper, is_phys):
+def root_mean_square(values, ax_val, index, Nper, is_aper, is_phys, is_fft):
     """Returns the root mean square (arithmetic or integral) of values along given axis
 
     Parameters
@@ -119,10 +128,12 @@ def root_mean_square(values, ax_val, index, Nper, is_aper, is_phys):
         # Remove anti-periodicity since values is squared
         is_aper = False
 
-    return np.sqrt(my_mean(values ** 2, ax_val, index, Nper, is_aper, is_phys))
+    return np.sqrt(my_mean(values ** 2, ax_val, index, Nper, is_aper, is_phys, is_fft))
 
 
-def root_sum_square(values, ax_val, index, Nper, is_aper, is_phys, unit):
+def root_sum_square(
+    values, ax_val, index, Nper, is_aper, is_phys, unit, is_fft, corr_unit="SI"
+):
     """Returns the root sum square (arithmetic or integral) of values along given axis
 
     Parameters
@@ -148,7 +159,7 @@ def root_sum_square(values, ax_val, index, Nper, is_aper, is_phys, unit):
 
     # To sum dB or dBA
     if "dB" in unit:
-        return my_sum(values, index, Nper, is_aper, unit)
+        return my_sum(values, index, Nper, is_aper, unit, is_fft, corr_unit=corr_unit)
 
     else:
         if is_aper and Nper is not None:
@@ -161,6 +172,8 @@ def root_sum_square(values, ax_val, index, Nper, is_aper, is_phys, unit):
         if is_phys:
             values = integrate(values ** 2, ax_val, index, Nper, is_aper, is_phys)
         else:
-            values = my_sum(values ** 2, index, Nper, is_aper, unit)
+            values = my_sum(
+                values ** 2, index, Nper, is_aper, unit, is_fft, corr_unit=corr_unit
+            )
 
         return np.sqrt(values)

@@ -131,6 +131,11 @@ except ImportError as error:
     orthogonal_mp = error
 
 try:
+    from ..Methods.DataND.plot import plot
+except ImportError as error:
+    plot = error
+
+try:
     from ..Methods.DataND.plot_2D_Data import plot_2D_Data
 except ImportError as error:
     plot_2D_Data = error
@@ -147,6 +152,7 @@ except ImportError as error:
 
 
 from numpy import array, array_equal
+from numpy import isnan
 from ._check import InitUnKnowClassError
 from .Normalization import Normalization
 
@@ -401,6 +407,15 @@ class DataND(Data):
         )
     else:
         orthogonal_mp = orthogonal_mp
+    # cf Methods.DataND.plot
+    if isinstance(plot, ImportError):
+        plot = property(
+            fget=lambda x: raise_(
+                ImportError("Can't use DataND method plot: " + str(plot))
+            )
+        )
+    else:
+        plot = plot
     # cf Methods.DataND.plot_2D_Data
     if isinstance(plot_2D_Data, ImportError):
         plot_2D_Data = property(
@@ -661,6 +676,15 @@ class DataND(Data):
         """setter of axes"""
         if type(value) is list:
             for ii, obj in enumerate(value):
+                if isinstance(obj, str):  # Load from file
+                    try:
+                        obj = load_init_dict(obj)[1]
+                    except Exception as e:
+                        self.get_logger().error(
+                            "Error while loading " + obj + ", setting None instead"
+                        )
+                        obj = None
+                        value[ii] = None
                 if type(obj) is dict:
                     class_obj = import_class(
                         "SciDataTool.Classes", obj.get("__class__"), "axes"

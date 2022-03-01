@@ -1,4 +1,4 @@
-from numpy import array
+from numpy import array, argsort
 
 from importlib import import_module
 
@@ -8,6 +8,8 @@ from SciDataTool.Functions.symmetries import rebuild_symmetries_axis
 from SciDataTool.Functions import AxisError
 
 operation_list = [
+    "max",
+    "min",
     "sum",
     "rss",
     "mean",
@@ -37,12 +39,27 @@ def get_axis(self, axis, is_real):
         self.rebuild_indices = axis.rebuild_indices
         self.is_step = axis.is_step
     is_components = getattr(axis, "is_components", False)
+    if (
+        is_components and axis.is_overlay and self.extension == "whole"
+    ):  # To overlay curves in plots
+        self.extension = "list"
+        self.indices = [":"]
     if is_components:
         values = axis.get_values(unit=self.unit)
         if self.indices is not None:
             if self.indices[0] == ":":
                 self.values = values
                 self.indices = list(range(len(values)))
+            elif isinstance(self.indices[0], str):  # N largest
+                self.extension = "list"
+                N = int(self.indices[0])
+                # Sort values
+                if hasattr(axis, "sort_indices") and axis.sort_indices is not None:
+                    self.indices = axis.sort_indices[:N]
+                    self.values = values[self.indices]
+                else:
+                    self.indices = argsort(values)[::-1][:N].tolist()
+                    self.values = values[self.indices]
             else:
                 self.values = values[self.indices]
                 self.extension = "list"
@@ -176,6 +193,8 @@ def get_axis(self, axis, is_real):
                 "smallestperiod",
                 "oneperiod",
                 "antiperiod",
+                "max",
+                "min",
                 "sum",
                 "mean",
                 "rms",
@@ -208,6 +227,13 @@ def get_axis(self, axis, is_real):
             else:
                 self.values = values
         if self.indices is not None:
+            if isinstance(self.indices[0], str):  # N largest
+                N = int(self.indices[0])
+                # Sort values
+                if hasattr(axis, "sort_indices") and axis.sort_indices is not None:
+                    self.indices = axis.sort_indices[:N]
+                else:
+                    self.indices = argsort(values)[::-1][:N].tolist()
             self.values = values[self.indices]
             if self.extension in operation_list:
                 self.indices = None
