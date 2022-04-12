@@ -16,6 +16,16 @@ from ._frozen import FrozenClass
 # Import all class method
 # Try/catch to remove unnecessary dependencies in unused method
 try:
+    from ..Methods.VectorField.change_periodicity import change_periodicity
+except ImportError as error:
+    change_periodicity = error
+
+try:
+    from ..Methods.VectorField.change_referential import change_referential
+except ImportError as error:
+    change_referential = error
+
+try:
     from ..Methods.VectorField.filter_spectral_leakage import filter_spectral_leakage
 except ImportError as error:
     filter_spectral_leakage = error
@@ -101,7 +111,6 @@ except ImportError as error:
     to_rphiz = error
 
 
-from numpy import isnan
 from ._check import InitUnKnowClassError
 
 
@@ -111,6 +120,30 @@ class VectorField(FrozenClass):
     VERSION = 1
 
     # Check ImportError to remove unnecessary dependencies in unused method
+    # cf Methods.VectorField.change_periodicity
+    if isinstance(change_periodicity, ImportError):
+        change_periodicity = property(
+            fget=lambda x: raise_(
+                ImportError(
+                    "Can't use VectorField method change_periodicity: "
+                    + str(change_periodicity)
+                )
+            )
+        )
+    else:
+        change_periodicity = change_periodicity
+    # cf Methods.VectorField.change_referential
+    if isinstance(change_referential, ImportError):
+        change_referential = property(
+            fget=lambda x: raise_(
+                ImportError(
+                    "Can't use VectorField method change_referential: "
+                    + str(change_referential)
+                )
+            )
+        )
+    else:
+        change_referential = change_referential
     # cf Methods.VectorField.filter_spectral_leakage
     if isinstance(filter_spectral_leakage, ImportError):
         filter_spectral_leakage = property(
@@ -491,15 +524,6 @@ class VectorField(FrozenClass):
         """setter of components"""
         if type(value) is dict:
             for key, obj in value.items():
-                if isinstance(obj, str):  # Load from file
-                    try:
-                        obj = load_init_dict(obj)[1]
-                    except Exception as e:
-                        self.get_logger().error(
-                            "Error while loading " + obj + ", setting None instead"
-                        )
-                        obj = None
-                        value[key] = None
                 if type(obj) is dict:
                     class_obj = import_class(
                         "SciDataTool.Classes", obj.get("__class__"), "components"

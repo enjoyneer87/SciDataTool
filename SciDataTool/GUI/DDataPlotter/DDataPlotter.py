@@ -1,3 +1,4 @@
+from json import tool
 from PySide2.QtWidgets import QWidget
 from SciDataTool.Functions import parser
 from PySide2.QtCore import Qt
@@ -7,13 +8,15 @@ from matplotlib.backends.backend_qt5agg import (
     NavigationToolbar2QT as NavigationToolbar,
 )
 from SciDataTool.Functions.Plot.init_fig import init_fig
+import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 from matplotlib.collections import PathCollection, QuadMesh
 from matplotlib.text import Annotation
 from numpy import array
-from SciDataTool.Functions.Plot import ifft_dict, fft_dict
+from SciDataTool.Functions.is_axes_in_order import is_axes_in_order
 from SciDataTool.Functions.Plot import TEXT_BOX
+
 
 SYMBOL_DICT = {
     "time": "t",
@@ -39,6 +42,7 @@ PARAM_3D = [
     "colormap",
     "annotation_delim",
     "marker_color",
+    "z_range",
 ]
 
 PARAM_2D = [
@@ -71,6 +75,9 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
         is_auto_refresh=False,
         frozen_type=0,
         plot_arg_dict=dict(),
+        save_path="",
+        logger=None,
+        path_to_image=None,
     ):
         """Initialize the UI according to the input given by the user
 
@@ -96,6 +103,12 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
             Dictionnary with arguments that must be given to the plot
         frozen_type : int
             0 to let the user modify the axis of the plot, 1 to let him switch them, 2 to not let him change them, 3 to freeze both axes and operations, 4 to freeze fft
+        save_path : str
+            path to the folder where the animations are saved
+        logger : logger
+            logger used to print path to animation (if None using print instead)
+        path_to_image : str
+            path to the folder where the image for the animation button is saved
         """
 
         # Build the interface according to the .ui file
@@ -134,6 +147,11 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
             z_max=z_max,
             frozen_type=frozen_type,
             is_quiver=is_quiver,
+            plot_arg_dict=plot_arg_dict,
+            save_path=save_path,
+            logger=logger,
+            path_to_image=path_to_image,
+            main_widget=self,
         )
 
         # Building the interaction with the UI itself
@@ -198,9 +216,20 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
             text_box = TEXT_BOX
         # Set plot layout
         self.canvas = FigureCanvas(fig)
-        self.toolbar = NavigationToolbar(self.canvas, self)
+        if self.toolbar is None:
+            toolbar = NavigationToolbar(self.canvas, self)
+        else:
+            toolbar = NavigationToolbar(self.canvas, self)
+            action_names = [action.text() for action in self.toolbar.actions()]
+            for action in toolbar.actions():
+                if action.text() in action_names:
+                    action.setIcon(
+                        self.toolbar.actions()[action_names.index(action.text())].icon()
+                    )
+                else:
+                    toolbar.removeAction(action)
 
-        self.plot_layout.addWidget(self.toolbar)
+        self.plot_layout.addWidget(toolbar)
         self.plot_layout.addWidget(self.canvas)
 
         self.text = None
@@ -216,6 +245,7 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
                 for child in self.ax.get_children()
                 if isinstance(child, Annotation)
             ]
+            is_annot = True
             X_str = None
             if (
                 ind is not None
@@ -225,7 +255,8 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
             ):
                 if annotations[ind[0]]._x == x:
                     X_str = annotations[ind[0]]._text
-            else:
+                    is_annot = False
+            if is_annot:
                 # Use ticklabels
                 try:
                     x_float = float(self.ax.get_xticklabels()[-1]._text)
@@ -274,7 +305,7 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
                     ylabel = latex(SYMBOL_DICT[axes_selected_parsed[1].name.lower()])
                 else:
                     ylabel = latex(axes_selected_parsed[1].name)
-                yunit = "[" + latex(axes_selected_parsed[1].unit) + "]"
+                yunit = "[" + axes_selected_parsed[1].unit + "]"
 
             else:
                 if self.data.name.lower() in SYMBOL_DICT:
@@ -330,6 +361,12 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
 
                 label += sep + zlabel + " = " + Z_str + " " + zunit
 
+            # Add hidden annotations
+            if annotations != [] and not annotations[0]._visible and is_annot:
+                for annotation in annotations:
+                    if annotation._x == x and annotation._y == y:
+                        label += sep + annotation._text
+
             # Remove latex marks for top right corner
             if sep == ", ":
                 label = label.replace("$", "").replace("{", "").replace("}", "")
@@ -342,6 +379,7 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
             plot_obj = event.artist
             Z = None
             legend = None
+            annot = None
             if isinstance(plot_obj, Line2D):
                 ind = event.ind
                 xdata = plot_obj.get_xdata()
@@ -352,6 +390,18 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
                     legend = self.ax.get_legend_handles_labels()[1][
                         self.ax.lines.index(plot_obj)
                     ]
+                    annotations = [
+                        child
+                        for child in self.ax.get_children()
+                        if isinstance(child, Annotation)
+                    ]
+                    if (
+                        annotations != []
+                        and self.ax.lines.index(plot_obj) in range(len(annotations))
+                        and not annotations[self.ax.lines.index(plot_obj)]._visible
+                        and "Overall" not in legend
+                    ):
+                        annot = annotations[self.ax.lines.index(plot_obj)]._text
             elif isinstance(plot_obj, PathCollection):
                 ind = event.ind
                 X = plot_obj.get_offsets().data[ind][0][0]
@@ -390,6 +440,8 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
                 label = format_coord(X, Y, Z, sep="\n", ind=ind)
                 if legend is not None:
                     label = legend + "\n" + label
+                if annot is not None:
+                    label += "\n" + annot
                 if label != "":
                     if self.text is None:
                         # Create label in box and black cross
@@ -467,6 +519,10 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
                 widgetToRemove.deleteLater()
 
         if self.fig.get_axes():
+            if len(self.fig.canvas.toolbar.actions()) == 11:
+                self.toolbar = None
+            else:
+                self.toolbar = self.fig.canvas.toolbar
             self.fig.clear()
 
         (self.fig, self.ax, _, _) = init_fig()
@@ -481,42 +537,10 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
         ] = self.w_plot_manager.get_plot_info()
 
         # Checking if the axes are following the order inside the data object
-        axes_selected_parsed = parser.read_input_strings(axes_selected, axis_data=None)
-        axes_name = [ax.name for ax in self.data.get_axes()]
         not_in_order = False
 
         if len(axes_selected) == 2:
-            if (
-                axes_selected_parsed[0].name in axes_name
-                and axes_selected_parsed[1].name in axes_name
-            ):
-                if axes_name.index(axes_selected_parsed[0].name) > axes_name.index(
-                    axes_selected_parsed[1].name
-                ):
-                    not_in_order = True
-                    axes_selected = [axes_selected[1], axes_selected[0]]
-
-            elif (
-                axes_selected_parsed[0].name in ifft_dict
-                and axes_selected_parsed[1].name in ifft_dict
-            ):
-                if axes_name.index(
-                    ifft_dict[axes_selected_parsed[0].name]
-                ) > axes_name.index(ifft_dict[axes_selected_parsed[1].name]):
-
-                    not_in_order = True
-                    axes_selected = [axes_selected[1], axes_selected[0]]
-
-            elif (
-                axes_selected_parsed[0].name in fft_dict
-                and axes_selected_parsed[1].name in fft_dict
-            ):
-                if axes_name.index(
-                    fft_dict[axes_selected_parsed[0].name]
-                ) > axes_name.index(fft_dict[axes_selected_parsed[1].name]):
-
-                    not_in_order = True
-                    axes_selected = [axes_selected[1], axes_selected[0]]
+            not_in_order, axes_selected = is_axes_in_order(axes_selected, self.data)
 
         if not None in data_selection:
             if len(axes_selected) == 1:
@@ -542,6 +566,15 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
                         if plot_arg_dict_2D["is_smallestperiod"]:
                             angle_str = "angle[smallestperiod]"
                         del plot_arg_dict_2D["is_smallestperiod"]
+                    if "fig" in plot_arg_dict_2D:
+                        # plt.rcParams.update(
+                        #     {
+                        #         "font.family": plot_arg_dict_2D["fig"]
+                        #         .texts[0]
+                        #         ._fontproperties._family[0],
+                        #     }
+                        # )
+                        del plot_arg_dict_2D["fig"]
                     self.data_orig.plot_2D_Data(
                         *[*[angle_str], *data_selection],
                         **plot_arg_dict_2D,
@@ -553,6 +586,17 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
                         component_list=component_list,
                     )
                 else:
+                    if "axis_data" in plot_arg_dict_2D:
+                        for axis_name in plot_arg_dict_2D["axis_data"]:
+                            for i, axis_selected in enumerate(axes_selected):
+                                if axis_name in axis_selected:
+                                    if "axis_data" not in axis_selected:
+                                        axes_selected[i] = (
+                                            axis_selected.split("{")[0]
+                                            + "=axis_data"
+                                            + "{"
+                                            + axis_selected.split("{")[1]
+                                        )
                     self.data.plot_2D_Data(
                         *[*axes_selected, *data_selection],
                         **plot_arg_dict_2D,
@@ -570,14 +614,29 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
                         del plot_arg_dict_3D[param]
                 if "is_2D_view" not in self.plot_arg_dict:
                     self.plot_arg_dict["is_2D_view"] = True
+                if "axis_data" in plot_arg_dict_3D:
+                    for axis_name in plot_arg_dict_3D["axis_data"]:
+                        for i, axis_selected in enumerate(axes_selected):
+                            if axis_name in axis_selected:
+                                if "axis_data" not in axis_selected:
+                                    axes_selected[i] = (
+                                        axis_selected.split("{")[0]
+                                        + "=axis_data"
+                                        + "{"
+                                        + axis_selected.split("{")[1]
+                                    )
+                if output_range["min"] is not None:
+                    plot_arg_dict_3D["z_min"] = output_range["min"]
+                if output_range["max"] is not None:
+                    plot_arg_dict_3D["z_max"] = output_range["max"]
+                if "is_switch_axes" in plot_arg_dict_3D:
+                    del plot_arg_dict_3D["is_switch_axes"]
                 self.data.plot_3D_Data(
                     *[*axes_selected, *data_selection],
                     **plot_arg_dict_3D,
                     unit=output_range["unit"],
                     fig=self.fig,
                     ax=self.ax,
-                    z_min=output_range["min"],
-                    z_max=output_range["max"],
                     is_switch_axes=not_in_order,
                 )
 
@@ -594,6 +653,9 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
         plot_arg_dict=dict(),
         is_keep_config=False,
         frozen_type=0,
+        save_path="",
+        logger=None,
+        path_to_image=None,
     ):
         """Method to set the DDataPlotter with information given
         self : DDataPlotter
@@ -606,6 +668,12 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
             Dictionnary with arguments that must be given to the plot
         frozen_type : int
             0 to let the user modify the axis of the plot, 1 to let him switch them, 2 to not let him change them, 3 to freeze both axes and operations, 4 to freeze fft
+        save_path : str
+            path to the folder where the animations are saved
+        logger : logger
+            logger used to print path to animation (if None using print instead)
+        path_to_image : str
+            path to the folder where the image for the animation button is saved
         """
 
         self.plot_arg_dict = plot_arg_dict
@@ -623,7 +691,11 @@ class DDataPlotter(Ui_DDataPlotter, QWidget):
             axes_request_list=axes_request_list,
             is_keep_config=is_keep_config,
             frozen_type=frozen_type,
+            plot_arg_dict=plot_arg_dict,
             is_quiver=is_quiver,
+            save_path=save_path,
+            logger=logger,
+            path_to_image=path_to_image,
         )
 
     def showEvent(self, ev):

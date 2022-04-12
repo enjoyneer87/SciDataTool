@@ -1,4 +1,3 @@
-from operator import is_
 from SciDataTool.Functions.Plot.plot_2D import plot_2D
 from SciDataTool.Functions.Plot import (
     unit_dict,
@@ -22,6 +21,9 @@ from numpy import (
     insert,
     nanmin as np_min,
     linspace,
+    argmin,
+    argmax,
+    take,
     log10,
     nan,
 )
@@ -69,6 +71,7 @@ def plot_2D_Data(
     is_outside_legend=False,
     is_frame_legend=True,
     is_indlabels=False,
+    annotations=None,
 ):
     """Plots a field as a function of time
 
@@ -296,40 +299,44 @@ def plot_2D_Data(
                 xticklabels = None
                 xticks = None
         else:
-            is_display = True
-            if axis.is_pattern and len(axis.values) == 1:
-                is_display = False
-            if is_display:
-                if axis.corr_unit == "SI":
-                    if axis.name in unit_dict:
-                        axis_unit = unit_dict[axis.name]
-                    else:
-                        axis_unit = axis.unit
-                elif axis.corr_unit in norm_dict and axis.corr_unit != "Hz":
-                    axis_unit = norm_dict[axis.corr_unit]
+            if axis.corr_unit == "SI":
+                if axis.name in unit_dict:
+                    axis_unit = unit_dict[axis.name]
                 else:
-                    axis_unit = axis.corr_unit
+                    axis_unit = axis.unit
+            elif axis.corr_unit in norm_dict and axis.corr_unit != "Hz":
+                axis_unit = norm_dict[axis.corr_unit]
+            else:
+                axis_unit = axis.unit
 
-                if isinstance(result_0[axis.name], str):
-                    title2 += name + "=" + result_0[axis.name]
+            if isinstance(result_0[axis.name], str):
+                title2 += name + "=" + result_0[axis.name]
+            else:
+                if isinstance(result_0[axis.name][0], str):
+                    axis_str = result_0[axis.name][0]
                 else:
-                    if isinstance(result_0[axis.name][0], str):
-                        axis_str = result_0[axis.name][0]
+                    if result_0[axis.name][0] > 10:
+                        fmt = "{:.5g}"
                     else:
-                        if result_0[axis.name][0] > 10:
-                            fmt = "{:.5g}"
-                        else:
-                            fmt = "{:.3g}"
-                        axis_str = array2string(
-                            result_0[axis.name], formatter={"float_kind": fmt.format}
-                        ).replace(" ", ", ")
+                        fmt = "{:.3g}"
+                    axis_str = array2string(
+                        result_0[axis.name], formatter={"float_kind": fmt.format}
+                    ).replace(" ", ", ")
 
-                    if len(result_0[axis.name]) == 1:
-                        axis_str = axis_str.strip("[]")
+                if len(result_0[axis.name]) == 1:
+                    axis_str = axis_str.strip("[]")
 
-                    title2 += (
-                        name + "=" + axis_str.rstrip(", ") + " [" + axis_unit + "], "
-                    )
+                index = None
+                if axis.is_pattern and len(axis.values) == 1:
+                    for axis_obj in self.get_axes():
+                        if axis_obj.name == axis.name:
+                            index = axis.indices[0]
+
+                title2 += name + "=" + axis_str.rstrip(", ") + " [" + axis_unit + "]"
+                if index is not None:
+                    title2 += " (slice " + str(index + 1) + "), "
+                else:
+                    title2 += ", "
 
     # Title part 3 containing axes that are here but not involved in requested axes
     title3 = ""
@@ -437,7 +444,7 @@ def plot_2D_Data(
                 axis_index = where(array(d.shape) == n_curves)[0]
                 if axis_index.size > 1:
                     print("WARNING, several axes with same dimensions")
-                Ydata += split(d, n_curves, axis=axis_index[0])
+                Ydata += split(d, n_curves, axis=axis_index[-1])
             else:
                 Ydata += [d]
         Ydatas = [squeeze(d) for d in Ydata]
@@ -493,9 +500,11 @@ def plot_2D_Data(
             if arg_list_ovl[i] == 0:
                 arg_list_ovl[i] = arg
         if is_fft or "dB" in unit:
-            result = self.get_magnitude_along(*arg_list_ovl, unit=unit)
+            result = self.get_magnitude_along(
+                *arg_list_ovl, unit=unit, axis_data=axis_data
+            )
         else:
-            result = self.get_along(*arg_list_ovl, unit=unit)
+            result = self.get_along(*arg_list_ovl, unit=unit, axis_data=axis_data)
         Y_overall = result[self.symbol]
         # in string case not overlay, Xdatas is a linspace
         if (
@@ -643,6 +652,40 @@ def plot_2D_Data(
         # Force curve plot if type_plot not specified
         if type_plot is None:
             type_plot = "curve"
+        annot = None
+        # Hidden annotations
+        if annotations is not None:
+            annot = list()
+            axis_along = self.get_axes(annotations[0])[0]
+            axis_op = self.get_axes(annotations[1])[0]
+            operation = annotations[2]
+            arg_list_new = []
+            if self.unit == "W":
+                op = "=sum"
+            else:
+                op = "=rss"
+            for axis in self.get_axes():
+                if axis.name not in [axis_along.name, axis_op.name]:
+                    arg_list_new.append(axis.name + op)
+                else:
+                    arg_list_new.append(axis.name)
+            data2 = self.get_data_along(*arg_list_new, unit=unit)
+            arg_list_new = []
+            for arg in arg_list_along:
+                if axis_along.name in arg or axis_op.name in arg:
+                    arg_list_new.append(arg.replace("=sum", ""))
+            result = data2.get_magnitude_along(*arg_list_new)
+            for ii in range(len(result[annotations[0]])):
+                if operation == "max":
+                    index = argmax(take(result[self.symbol], ii, axis=0))
+                    annot.append(
+                        "main "
+                        + annotations[1].rstrip("s")
+                        + ": "
+                        + axis_op.get_values()[index]
+                    )
+            if len(overall_axes) != 0:
+                annot.insert(0, "Overall")
 
         plot_2D(
             Xdatas,
@@ -679,4 +722,5 @@ def plot_2D_Data(
             is_outside_legend=is_outside_legend,
             is_frame_legend=is_frame_legend,
             is_indlabels=is_indlabels,
+            annotations=annot,
         )

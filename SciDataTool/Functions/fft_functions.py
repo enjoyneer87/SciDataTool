@@ -231,9 +231,19 @@ def comp_fftn(values, axes_list, is_real=True):
                     axis.input_data = None
                     continue
             if axis.input_data is not None:
-                if not isin(
-                    around(axis.input_data, decimals=5), around(axis.values, decimals=5)
-                ).all():
+                if (
+                    len(axis.input_data) == 1
+                    and not isin(
+                        around(axis.input_data, decimals=0),
+                        around(axis.values, decimals=0),
+                    ).all()
+                ) or (
+                    len(axis.input_data) > 1
+                    and not isin(
+                        around(axis.input_data, decimals=5),
+                        around(axis.values, decimals=5),
+                    ).all()
+                ):
                     is_non_uniform = True
                     # Convert wavenumbers to frequencies if needed
                     frequencies = (
@@ -353,9 +363,14 @@ def comp_ifftn(values, axes_list, is_real=True):
             if axis.input_data is not None and len(axis.input_data) > 1:
                 if not is_uniform(axis.input_data):
                     # Data is at least non uniform in "space"
+                    corr_values = (
+                        axis.corr_values
+                        if axis.name == "time"
+                        else axis.corr_values / (2 * pi)
+                    )
                     axes_dict_non_uniform[axis.index] = [
                         axis.input_data,
-                        axis.corr_values,
+                        corr_values,
                     ]
                     # Keep only interpolation data
                     axis.values = axis.input_data

@@ -17,6 +17,9 @@ from numpy import (
     linspace,
     log10,
     array,
+    ceil,
+    floor,
+    argmin,
 )
 
 
@@ -63,6 +66,7 @@ def plot_3D_Data(
     annotation_delim=None,
     marker_color="k",
     is_shading_flat=None,
+    is_hide_annotation=False,
 ):
     """Plots a field as a function of two axes
 
@@ -186,7 +190,9 @@ def plot_3D_Data(
                 is_flat=True,
             )
     else:
-        result = self.get_along(*arg_list_along, unit=unit, is_norm=is_norm)
+        result = self.get_along(
+            *arg_list_along, axis_data=axis_data, unit=unit, is_norm=is_norm
+        )
 
     if type_plot == "scatter" and not is_fft:
         is_fft = True
@@ -221,12 +227,18 @@ def plot_3D_Data(
             if is_fft:
                 z_min = 0
             else:
-                z_min = np_min(Zdata)
+                if "dB" in unit:
+                    z_min = floor(np_min(Zdata))
+                else:
+                    z_min = np_min(Zdata)
         if z_max is None:
             z_max = np_max(Zdata)
     else:
         if z_min is None and z_max is None:
-            z_max = np_max(Zdata)
+            if "dB" in unit:
+                z_max = ceil(np_max(Zdata))
+            else:
+                z_max = np_max(Zdata)
         if z_max is None:
             z_max = z_min + z_range
         if z_min is None:
@@ -331,9 +343,23 @@ def plot_3D_Data(
                     flat_indices.append(axes_names.index(axis.name))
 
     title2 = "for "
-    for axis in axes_list[2:]:
-        is_display = True
-        if axis.is_pattern and len(axis.values) == 1:
+    for axis in axes_list:
+        if not (
+            axis.extension
+            in [
+                "whole",
+                "interval",
+                "oneperiod",
+                "antiperiod",
+                "smallestperiod",
+                "axis_data",
+                "list",
+            ]
+            and len(axis.values) > 1
+            or (len(axis.values) == 1 and len(axes_list) == 1)
+        ):
+            is_display = True
+        else:
             is_display = False
         if is_display:
             if axis.unit == "SI":
@@ -360,10 +386,20 @@ def plot_3D_Data(
                     .replace("]", "")
                     + " ["
                     + axis_unit
-                    + "], "
+                    + "]"
                 )
 
-            title2 += axis.name + "=" + axis_str
+                index = None
+                if axis.is_pattern and len(axis.values) == 1:
+                    for axis_obj in self.get_axes():
+                        if axis_obj.name == axis.name:
+                            index = axis.indices[0]
+
+                title2 += axis.name + "=" + axis_str
+                if index is not None:
+                    title2 += " (slice " + str(index + 1) + "), "
+                else:
+                    title2 += ", "
 
     title3 = ""
     for axis_name in axes_dict_other:
@@ -549,6 +585,7 @@ def plot_3D_Data(
                 annotations=annotations,
                 annotation_threshold=annotation_threshold,
                 marker_color=marker_color,
+                is_hide_annotation=is_hide_annotation,
             )
         else:
             plot_3D(

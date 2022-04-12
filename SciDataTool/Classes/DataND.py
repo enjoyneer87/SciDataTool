@@ -66,6 +66,11 @@ except ImportError as error:
     _set_values = error
 
 try:
+    from ..Methods.DataND.change_referential import change_referential
+except ImportError as error:
+    change_referential = error
+
+try:
     from ..Methods.DataND.compare_along import compare_along
 except ImportError as error:
     compare_along = error
@@ -150,11 +155,14 @@ try:
 except ImportError as error:
     plot_3D_Data = error
 
+try:
+    from ..Methods.DataND.plot_3D_Data_Animated import plot_3D_Data_Animated
+except ImportError as error:
+    plot_3D_Data_Animated = error
+
 
 from numpy import array, array_equal
-from numpy import isnan
 from ._check import InitUnKnowClassError
-from .Normalization import Normalization
 
 
 class DataND(Data):
@@ -266,6 +274,18 @@ class DataND(Data):
         )
     else:
         _set_values = _set_values
+    # cf Methods.DataND.change_referential
+    if isinstance(change_referential, ImportError):
+        change_referential = property(
+            fget=lambda x: raise_(
+                ImportError(
+                    "Can't use DataND method change_referential: "
+                    + str(change_referential)
+                )
+            )
+        )
+    else:
+        change_referential = change_referential
     # cf Methods.DataND.compare_along
     if isinstance(compare_along, ImportError):
         compare_along = property(
@@ -450,6 +470,18 @@ class DataND(Data):
         )
     else:
         plot_3D_Data = plot_3D_Data
+    # cf Methods.DataND.plot_3D_Data_Animated
+    if isinstance(plot_3D_Data_Animated, ImportError):
+        plot_3D_Data_Animated = property(
+            fget=lambda x: raise_(
+                ImportError(
+                    "Can't use DataND method plot_3D_Data_Animated: "
+                    + str(plot_3D_Data_Animated)
+                )
+            )
+        )
+    else:
+        plot_3D_Data_Animated = plot_3D_Data_Animated
     # save and copy methods are available in all object
     save = save
     copy = copy
@@ -676,15 +708,6 @@ class DataND(Data):
         """setter of axes"""
         if type(value) is list:
             for ii, obj in enumerate(value):
-                if isinstance(obj, str):  # Load from file
-                    try:
-                        obj = load_init_dict(obj)[1]
-                    except Exception as e:
-                        self.get_logger().error(
-                            "Error while loading " + obj + ", setting None instead"
-                        )
-                        obj = None
-                        value[ii] = None
                 if type(obj) is dict:
                     class_obj = import_class(
                         "SciDataTool.Classes", obj.get("__class__"), "axes"
