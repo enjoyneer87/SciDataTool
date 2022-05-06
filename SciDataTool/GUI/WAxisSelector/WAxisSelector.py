@@ -163,11 +163,14 @@ class WAxisSelector(Ui_WAxisSelector, QWidget):
             axis_to_remove = ifft_dict[axis_to_remove]
 
         if axis_to_remove in self.axes_list:
-            axes_list = self.axes_list[:]  # Getting the axes available
+            axes_list = self.axes_list.copy()  # Getting the axes available
             axes_list.remove(axis_to_remove)  # Removing the axis selected
 
             # Building the new ComboBox
             self.c_axis.blockSignals(True)
+            index = 0
+            if self.c_axis.currentText() != "None":
+                index = self.c_axis.currentIndex()
             self.c_axis.clear()
 
             for ax in axes_list:
@@ -177,9 +180,10 @@ class WAxisSelector(Ui_WAxisSelector, QWidget):
                     self.c_axis.addItem(ax)
 
             update_cb_enable(self.c_axis)
+            self.c_axis.setCurrentIndex(index)
             self.c_axis.blockSignals(False)
 
-            self.update_axis(is_refresh=False)
+            self.update_axis(is_refresh=True)
 
     def set_axis(self, axis):
         """Method that will set the comboboxes to have the axis given as an input when calling the plot method (auto-plot).
@@ -211,6 +215,7 @@ class WAxisSelector(Ui_WAxisSelector, QWidget):
         # Step 2 : Recovering the unit and setting the combobox according to it
         unit_name = axis.unit
         self.c_unit.blockSignals(True)
+        self.set_unit()
         if self.c_unit.findText(unit_name) != -1:
             self.c_unit.setCurrentIndex(self.c_unit.findText(unit_name))
         elif unit_name in unit_dict:
@@ -222,7 +227,6 @@ class WAxisSelector(Ui_WAxisSelector, QWidget):
         else:
             self.c_unit.setCurrentIndex(self.c_unit.findText(unit_name))
         self.c_unit.blockSignals(False)
-        self.set_unit()
 
         self.blockSignals(False)
 
@@ -322,7 +326,7 @@ class WAxisSelector(Ui_WAxisSelector, QWidget):
             self.c_action.setCurrentIndex(action_list.index(action))
         self.c_action.blockSignals(False)
 
-    def set_unit(self):
+    def set_unit(self, is_refresh=True):
         """Method that update the unit comboxbox according to the axis selected in the other combobox.
            We can also give the axis selected and put its units inside the combobox
         Parameters
@@ -337,6 +341,7 @@ class WAxisSelector(Ui_WAxisSelector, QWidget):
             self.c_unit.clear()
             self.c_unit.setDisabled(True)
         else:
+            unit_index = self.c_unit.currentIndex()
             self.c_unit.setDisabled(False)
             self.c_unit.clear()
 
@@ -363,13 +368,16 @@ class WAxisSelector(Ui_WAxisSelector, QWidget):
                 self.c_unit.setCurrentIndex(idx_unit)
                 if len(self.c_unit.currentText()) > cb_width:
                     cb_width = len(self.c_unit.currentText())
-            self.c_unit.setCurrentIndex(0)
+            if unit_index != -1:
+                if unit_index >= self.c_unit.count():
+                    unit_index = 0
+                self.c_unit.setCurrentIndex(unit_index)
 
             self.c_unit.view().setMinimumWidth(cb_width * 8)
 
         update_cb_enable(self.c_unit)
         self.c_unit.blockSignals(False)
-        self.update_unit()
+        self.update_unit(is_refresh=is_refresh)
 
     def update(self, axes_list, axis_name="X"):
         """Method used to update the widget by calling the other method for the label, the axes and the units
@@ -452,7 +460,6 @@ class WAxisSelector(Ui_WAxisSelector, QWidget):
 
         # Emitting the signals
         if is_refresh:
-            self.refreshNeeded.emit()
             self.axisChanged.emit()
 
     def update_action(self):
@@ -497,12 +504,11 @@ class WAxisSelector(Ui_WAxisSelector, QWidget):
                 self.axes_list.remove(fft_dict[self.axis_selected])
 
         # Now that the quantiy has been updated according to the action, we can set the units and emit the signals
-        self.set_unit()
+        self.set_unit(is_refresh=False)
 
-        self.refreshNeeded.emit()
         self.actionChanged.emit()
 
-    def update_unit(self):
+    def update_unit(self, is_refresh=True):
         """Method called when a new unit is selected so that we can update self.norm
         Parameters
         ----------
@@ -519,5 +525,5 @@ class WAxisSelector(Ui_WAxisSelector, QWidget):
                 is_match = True
         if not is_match:
             self.norm = None
-
-        self.refreshNeeded.emit()
+        if is_refresh:
+            self.refreshNeeded.emit()

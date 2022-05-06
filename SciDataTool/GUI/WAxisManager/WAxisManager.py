@@ -66,11 +66,15 @@ class WAxisManager(Ui_WAxisManager, QWidget):
         self : WAxisManager
             a WAxisManager object
         """
+        self.blockSignals(True)
         # Making sure that when axis 1 is updated, axis 1 and 2 are both on "None" for the action combobox
-        self.fft_sync("axis 1")
+        self.fft_sync("axis 1", is_refresh=False)
 
         # Recovering the axis selected by the user removing it from the the second axis combobox
         self.w_axis_2.remove_axis(self.w_axis_1.get_axis_selected())
+        self.gen_slice_op(is_refresh=False)
+        self.blockSignals(False)
+        self.update_needed()
 
     def axis_2_updated(self):
         """Method that make sure that when axis 2 is selected (None->?) it has the same fft/ifft combobox selected as axis1
@@ -80,10 +84,13 @@ class WAxisManager(Ui_WAxisManager, QWidget):
         self : WAxisManager
             a WAxisManager object
         """
-        # Making sure that when axis 1 is updated, axis 1 and 2 are both on "None" for the action combobox
-        self.fft_sync("axis 1")
+        # Making sure that when axis 2 is updated, axis 1 and 2 are both on "None" for the action combobox
+        self.blockSignals(True)
+        self.fft_sync("axis 2", is_refresh=False)
+        self.blockSignals(False)
+        self.update_needed()
 
-    def gen_slice_op(self, axes_request_list=None):
+    def gen_slice_op(self, axes_request_list=None, is_refresh=True):
         """Method that gen the right WDataExtrator widget according to the axis selected by the user in the UI
         Parameters
         ----------
@@ -156,7 +163,8 @@ class WAxisManager(Ui_WAxisManager, QWidget):
         else:
             self.w_slice_op = list()
             self.g_data_extract.hide()
-        self.update_needed()
+        if is_refresh:
+            self.update_needed()
 
     def gen_animate(self):
         """Methods called after clicking on animate button to generate a gif on the axis selected and display it
@@ -224,7 +232,7 @@ class WAxisManager(Ui_WAxisManager, QWidget):
 
         return operations_selected
 
-    def fft_sync(self, axis_changed):
+    def fft_sync(self, axis_changed, is_refresh=True):
         """Method that will check the action chosen and that update the other action combobox to have the same action.
         So that, by default, we have FFT and FFT or "None" and "None"
         Parameters
@@ -233,10 +241,11 @@ class WAxisManager(Ui_WAxisManager, QWidget):
             a WAxisManager object
 
         """
-        if axis_changed == "axis 1" and "FFT" in [
-            self.w_axis_1.c_action.itemText(i)
-            for i in range(self.w_axis_1.c_action.count())
-        ]:
+        self.blockSignals(True)
+        if axis_changed == "axis 1":  # and "FFT" in [
+            #     self.w_axis_1.c_action.itemText(i)
+            #     for i in range(self.w_axis_1.c_action.count())
+            # ]:
             action_selected = self.w_axis_1.get_current_action_name()
             self.w_axis_2.set_action(action_selected)
             if action_selected == "FFT":
@@ -287,13 +296,16 @@ class WAxisManager(Ui_WAxisManager, QWidget):
                                 fft_dict[self.w_axis_2.axis_selected]
                             )
                         ] = self.w_axis_2.axis_selected
-            self.gen_slice_op()
-            self.w_axis_2.set_unit()
+                # Make sure that all axes are reset to ifft
+                for i, axis in enumerate(self.w_axis_1.axes_list):
+                    if axis in ifft_dict:
+                        self.w_axis_1.axes_list[i] = ifft_dict[axis]
+            self.gen_slice_op(is_refresh=False)
 
-        elif axis_changed == "axis 2" and "FFT" in [
-            self.w_axis_2.c_action.itemText(i)
-            for i in range(self.w_axis_2.c_action.count())
-        ]:
+        elif axis_changed == "axis 2":  # and "FFT" in [
+            #     self.w_axis_2.c_action.itemText(i)
+            #     for i in range(self.w_axis_2.c_action.count())
+            # ]:
             action_selected = self.w_axis_2.get_current_action_name()
             self.w_axis_1.set_action(action_selected)
             if action_selected == "FFT":
@@ -344,8 +356,16 @@ class WAxisManager(Ui_WAxisManager, QWidget):
                                 fft_dict[self.w_axis_1.axis_selected]
                             )
                         ] = self.w_axis_1.axis_selected
-            self.gen_slice_op()
-            self.w_axis_1.set_unit()
+                # Make sure that all axes are reset to ifft
+                for i, axis in enumerate(self.w_axis_2.axes_list):
+                    if axis in ifft_dict:
+                        self.w_axis_2.axes_list[i] = ifft_dict[axis]
+            self.gen_slice_op(is_refresh=False)
+        self.w_axis_1.set_unit()
+        self.w_axis_2.set_unit()
+        self.blockSignals(False)
+        if is_refresh:
+            self.update_needed()
 
     def set_axis_widgets(
         self,
@@ -365,7 +385,8 @@ class WAxisManager(Ui_WAxisManager, QWidget):
         axes_request_list:
             list of RequestedAxis which are the info given for the autoplot (for the axes and DataSelection)
         frozen_type : int
-            0 to let the user modify the axis of the plot, 1 to let him switch them, 2 to not let him change them, 3 to freeze both axes and operations, 4 to freeze fft
+            0 to let the user modify the axis of the plot, 1 to let him switch them, 2 to not let him change them,
+            3 to freeze both axes and operations, 4 to freeze fft, 5 to only allow switch
         path_to_image : str
             path to the folder where the image for the animation button is saved
         """
@@ -446,7 +467,7 @@ class WAxisManager(Ui_WAxisManager, QWidget):
                     self.w_axis_2.set_axis(axes_list[1])
 
                 # Making sure that we have the same fft/ifft selected for both axis
-                self.axis_2_updated()
+                # self.axis_2_updated()
 
                 # Generating DataSelection with the input of user if they are given or by default (like in a manual plot)
                 if len(slices_op_list) != 0:
@@ -481,12 +502,19 @@ class WAxisManager(Ui_WAxisManager, QWidget):
             self.w_axis_2.c_axis.setDisabled(True)
             self.w_axis_2.c_action.setDisabled(True)
 
-            # Freezing the operations
+            # Freezing the operations (allowing only slice and requested ope)
             for w_slice in self.w_slice_op:
-                w_slice.b_action.setDisabled(True)
-                w_slice.c_operation.setDisabled(True)
-                w_slice.lf_value.setDisabled(True)
-                w_slice.slider.setDisabled(True)
+                current_ope = w_slice.c_operation.currentText()
+                if current_ope != "slice":
+                    w_slice.c_operation.blockSignals(True)
+                    w_slice.c_operation.clear()
+                    w_slice.c_operation.addItems(["slice", current_ope])
+                    w_slice.c_operation.setCurrentIndex(1)
+                    w_slice.c_operation.blockSignals(False)
+                else:
+                    w_slice.c_operation.setDisabled(True)
+                # w_slice.lf_value.setDisabled(True)
+                # w_slice.slider.setDisabled(True)
 
         elif frozen_type == 4:
             self.w_axis_1.c_axis.setDisabled(True)
@@ -497,6 +525,18 @@ class WAxisManager(Ui_WAxisManager, QWidget):
                 axes_list[1].name in ifft_dict or axes_list[0].name in fft_dict
             ):
                 self.w_axis_2.c_action.setDisabled(True)
+
+        elif frozen_type == 5:
+            # Freezing the axes
+            self.w_axis_1.c_action.setDisabled(True)
+            self.w_axis_2.c_action.setDisabled(True)
+
+            # Freezing the operations
+            for w_slice in self.w_slice_op:
+                w_slice.b_action.setDisabled(True)
+                w_slice.c_operation.setDisabled(True)
+                w_slice.lf_value.setDisabled(True)
+                w_slice.slider.setDisabled(True)
 
         if len(axes_list) == 1:
             self.w_axis_2.hide()
@@ -528,5 +568,5 @@ class WAxisManager(Ui_WAxisManager, QWidget):
             a WAxisManager object
         """
 
-        self.refreshNeeded.emit()
         self.refreshRange.emit()
+        self.refreshNeeded.emit()

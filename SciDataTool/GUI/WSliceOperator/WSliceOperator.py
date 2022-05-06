@@ -60,6 +60,7 @@ class WSliceOperator(Ui_WSliceOperator, QWidget):
         self.indices = None
         self.is_animate = False  # boolean to define if an animation must on this axis (must be on slice)
         self.is_pattern = False  # Detecting if the axis is a DataPattern (important for handling of slice + slider + lf_value)
+        self.is_components = False
         self.path_to_image = path_to_image
 
         # Setting path to recover the image for the animate button
@@ -112,30 +113,27 @@ class WSliceOperator(Ui_WSliceOperator, QWidget):
             # slice_index = self.slider.value()
             # action = "[" + str(slice_index) + "]"
 
-            if self.is_pattern:
+            if self.is_pattern or self.is_components:
                 # When working with DataPattern we must use index to give the exact value
                 action = "[" + str(self.slider.value()) + "]"
             else:
                 action = "=" + str(self.lf_value.value())
 
-            return self.axis_name + action + "{" + self.unit + "}", self.is_animate
+            return self.get_name() + action + "{" + self.unit + "}", self.is_animate
 
         elif action_type == "slice (fft)":
-            # slice_index = self.slider.value()
-            # action = "[" + str(slice_index) + "]"
             action = "=" + str(self.lf_value.value())
-            if self.axis_name in fft_dict:
-                return fft_dict[self.axis_name] + action, None
+            return self.get_name() + action, None
 
         elif action_type == "overlay":
             if self.indices is None:
-                return self.axis_name + "[]", None
+                return self.get_name() + "[]", None
             else:
-                return self.axis_name + str(self.indices), None
+                return self.get_name() + str(self.indices), None
 
         elif action_type in type_extraction_dict:
             action = type_extraction_dict[action_type]
-            return self.axis_name + action + "{" + self.unit + "}", None
+            return self.get_name() + action, None
         else:
             return None, None
 
@@ -245,7 +243,12 @@ class WSliceOperator(Ui_WSliceOperator, QWidget):
         self : WSliceOperator
             a WSliceOperator object
         """
-        if not self.axis.is_components:
+        if self.axis.is_components:
+            self.is_components = True
+            if self.c_operation.currentText() == "slice":
+                self.axis_value = self.axis.values
+            name = self.axis.name
+        else:
             # Converting the axis from rad to degree if the axis is angle as we do slice in degrees
             # Recovering the value from the axis as well
             if self.c_operation.currentText() == "slice":
@@ -284,23 +287,27 @@ class WSliceOperator(Ui_WSliceOperator, QWidget):
                 else:  # already wavenumber of freqs case
                     self.axis_value = self.axis.get_values()
 
-            # Setting the axis unit
-            if name in unit_dict:
-                self.unit = unit_dict[name]
+        # Setting the axis unit
+        if name in unit_dict:
+            self.unit = unit_dict[name]
 
-            if self.is_pattern:
-                # Setting the initial value of the floatEdit to the minimum slice (=1)
-                self.lf_value.setValue(1)
-                self.in_unit.setText("[-]")
-            else:
-                # Setting the initial value of the floatEdit to the minimum inside the axis
-                self.lf_value.setValue(min(self.axis_value))
-                self.in_unit.setText("[" + self.unit + "]")
+        if self.is_pattern:
+            # Setting the initial value of the floatEdit to the minimum slice (=1)
+            self.lf_value.setValue(1)
+            self.in_unit.setText("[-]")
+        elif self.is_components:
+            self.lf_value.hide()
+            self.b_animate.hide()
+            self.in_unit.setText(self.axis_value[0])
+        else:
+            # Setting the initial value of the floatEdit to the minimum inside the axis
+            self.lf_value.setValue(min(self.axis_value))
+            self.in_unit.setText("[" + self.unit + "]")
 
-            # Setting the slider by giving the number of index according to the size of the axis
-            self.slider.setMinimum(0)
-            self.slider.setMaximum(len(self.axis_value) - 1)
-            self.slider.setValue(0)
+        # Setting the slider by giving the number of index according to the size of the axis
+        self.slider.setMinimum(0)
+        self.slider.setMaximum(len(self.axis_value) - 1)
+        self.slider.setValue(0)
 
     def update(self, axis, axis_request=None):
         """Method that will update the WSliceOperator widget according to the axis given to it
@@ -375,6 +382,8 @@ class WSliceOperator(Ui_WSliceOperator, QWidget):
         if self.is_pattern:
             # When working with DataPattern, we have to work with the exact value given
             self.lf_value.setValue(self.slider.value() + 1)
+        elif self.is_components:
+            self.in_unit.setText(self.axis_value[self.slider.value()])
         else:
             self.lf_value.setValue(self.axis_value[self.slider.value()])
 
@@ -394,6 +403,8 @@ class WSliceOperator(Ui_WSliceOperator, QWidget):
         if self.is_pattern:
             # When working with DataPattern, we have to work with the exact value given
             self.lf_value.setValue(self.slider.value() + 1)
+        elif self.is_components:
+            self.in_unit.setText(self.axis_value[self.slider.value()])
         else:
             self.lf_value.setValue(self.axis_value[self.slider.value()])
 
@@ -413,17 +424,23 @@ class WSliceOperator(Ui_WSliceOperator, QWidget):
         # If the operation selected is a slice, then we show the slider and the floatEdit
         if extraction_selected == "slice" or extraction_selected == "slice (fft)":
             self.set_slider_floatedit()
-            self.lf_value.show()
+            if not self.is_components:
+                self.lf_value.show()
             self.in_unit.show()
             self.slider.show()
             self.b_action.hide()
-            if extraction_selected == "slice":
+            if extraction_selected == "slice" and not self.is_components:
                 self.b_animate.show()
             else:
                 self.b_animate.hide()
             self.refreshNeeded.emit()
         # If the operation selected is overlay then we show the related button
         elif extraction_selected == "overlay":
+            if self.axis_name in ifft_dict:
+                name = ifft_dict[self.axis_name]
+            else:
+                name = self.axis_name
+            self.set_name(name)
             self.lf_value.hide()
             self.in_unit.hide()
             self.slider.hide()
@@ -432,6 +449,11 @@ class WSliceOperator(Ui_WSliceOperator, QWidget):
             self.b_action.setText("Overlay")
             self.refreshNeeded.emit()
         else:
+            if self.axis_name in ifft_dict:
+                name = ifft_dict[self.axis_name]
+            else:
+                name = self.axis_name
+            self.set_name(name)
             self.lf_value.hide()
             self.in_unit.hide()
             self.slider.hide()
@@ -450,9 +472,13 @@ class WSliceOperator(Ui_WSliceOperator, QWidget):
 
         self.slider.blockSignals(True)
         # We set the value of the slider to the index closest to the value given
-        index = argmin(np_abs(self.axis_value - self.lf_value.value()))
-        self.slider.setValue(index)
+        if self.is_pattern:
+            # When working with DataPattern, we have to work with the exact value given
+            self.slider.setValue(self.lf_value.value() - 1)
+        else:
+            index = argmin(np_abs(self.axis_value - self.lf_value.value()))
+            self.slider.setValue(index)
         # We update the value of floatEdit to the index selected
-        self.lf_value.setValue(self.axis_value[index])
+        # self.lf_value.setValue(self.axis_value[index])
         self.slider.blockSignals(False)
         self.refreshNeeded.emit()
