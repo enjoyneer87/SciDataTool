@@ -4,6 +4,7 @@ from SciDataTool.Functions.Plot import (
     norm_dict,
     axes_dict,
     fft_dict,
+    ifft_dict,
     COLORS,
 )
 from SciDataTool.Functions.Load.import_class import import_class
@@ -21,11 +22,14 @@ from numpy import (
     insert,
     nanmin as np_min,
     linspace,
-    argmin,
+    argsort,
     argmax,
     take,
     log10,
     nan,
+    sum as np_sum,
+    sqrt,
+    zeros,
 )
 
 
@@ -36,11 +40,12 @@ def plot_2D_Data(
     is_norm=False,
     unit="SI",
     overall_axes=[],
+    contribution_axis=None,
     data_list=[],
     legend_list=[],
     color_list=None,
     linestyles=None,
-    linewidth_list=[2],
+    linewidth_list=[1.5],
     save_path=None,
     x_min=None,
     x_max=None,
@@ -72,6 +77,7 @@ def plot_2D_Data(
     is_frame_legend=True,
     is_indlabels=False,
     annotations=None,
+    is_export=False,
 ):
     """Plots a field as a function of time
 
@@ -388,7 +394,7 @@ def plot_2D_Data(
     for i, d in enumerate(data_list2):
         is_overlay = False
         for axis in axes_list:
-            if axis.extension == "list":
+            if axis.extension == "list" and len(axis.values) > 1:
                 is_overlay = True
                 if linestyles is None:
                     linestyles = ["dashed"]
@@ -409,7 +415,7 @@ def plot_2D_Data(
                             + " "
                             + axis.name
                             + "="
-                            + axis.values.tolist()[j]
+                            + axis.values.tolist()[j].replace(";", "")
                             + " "
                             + axis_unit
                             if isinstance(axis.values.tolist()[j], str)
@@ -522,6 +528,126 @@ def plot_2D_Data(
         new_color_list.insert(0, "#000000")
         legends.insert(0, "Overall")
 
+    # Contribution computation
+    if contribution_axis is not None:
+        contribution_name = contribution_axis.split("[")[0]
+        selection = contribution_axis.split("[")[1].rstrip("]").split(",")
+        contrib_axis = self.get_axes(contribution_name)[0]
+        type_plot = "stack"
+        OVL = Y_overall
+        if True in ["sum" in arg for arg in arg_list_along]:
+            sum_index = ["sum" in arg for arg in arg_list_along].index(True)
+        else:
+            sum_index = ["rss" in arg for arg in arg_list_along].index(True)
+        contrib_index = None
+        if contribution_name in [axis.name for axis in axes_list]:
+            contrib_index = [axis.name for axis in axes_list].index(contribution_name)
+        contrib_array = zeros((contrib_axis.get_length(), len(Y_overall)))
+        for i in range(contrib_axis.get_length()):
+            if unit == "dBA":
+                arg_list_new = [
+                    axis.name
+                    if axis.name != contribution_name
+                    else contribution_name + "[" + str(i) + "]"
+                    for axis in self.get_axes()
+                ]
+                contrib = self.get_magnitude_along(*arg_list_new, unit="SI")[
+                    self.symbol
+                ]
+                symbol = "AS" + self.symbol.capitalize() + "L"
+                name = "Sound " + self.name.lower().replace("acoustic ", "") + " Level"
+                A_weighting = (
+                    self.get_magnitude_along(*arg_list_new, unit="dBA")[self.symbol]
+                    - self.get_magnitude_along(*arg_list_new, unit="dB")[self.symbol]
+                )
+                if self.unit == "W":
+                    upper_sum = np_sum(
+                        10 ** (0.1 * A_weighting)
+                        * contrib
+                        / self.normalizations["ref"].ref,
+                        axis=sum_index,
+                    )
+                    cont = upper_sum / (10 ** (0.1 * OVL))
+                else:
+                    upper_sum = np_sum(
+                        10 ** (0.1 * A_weighting) * contrib ** 2, axis=sum_index
+                    )
+                    cont = upper_sum / (
+                        ((self.normalizations["ref"].ref ** 2) * 10 ** (0.1 * OVL))
+                    )
+            elif unit == "dB":
+                arg_list_new = [
+                    arg
+                    if contribution_name not in arg
+                    else contribution_name + "[" + str(i) + "]"
+                    for arg in arg_list_along
+                ]
+                contrib = self.get_magnitude_along(*arg_list_new, unit="SI")[
+                    self.symbol
+                ]
+                if "acoustic" in self.name.lower():
+                    symbol = "S" + self.symbol.capitalize() + "L"
+                    name = (
+                        "Sound " + self.name.lower().replace("acoustic ", "") + " Level"
+                    )
+                else:
+                    symbol = self.symbol
+                    name = self.name
+                if self.unit == "W":
+                    cont = contrib / (
+                        self.normalizations["ref"].ref * 10 ** (0.1 * OVL)
+                    )
+                else:
+                    cont = contrib ** 2 / (
+                        ((self.normalizations["ref"].ref ** 2) * 10 ** (0.1 * OVL))
+                    )
+            else:
+                symbol = self.symbol
+                name = self.name
+                if self.unit == "W":
+                    cont = Ydatas[i + 1] / OVL
+                else:
+                    cont = Ydatas[i + 1] ** 2 / OVL ** 2
+            contrib_array[i, :] = cont * 100
+        # Remove small contributions
+        # Iloads = where(sqrt(np_sum(contrib_array ** 2, 1)) > 1e-2)[0]
+        # Sort in decreasing order
+        Isort = argsort(-sqrt(np_sum(contrib_array ** 2, 1)), axis=0)
+        Ydatas = [Ydatas[0]]
+        legends = [r"100% (overall $" + symbol + "$)"]
+        new_color_list = [new_color_list[0]]
+        for i in range(len(Isort)):
+            if (
+                contrib_index is not None
+                and axes_list[contrib_index].indices is not None
+                and "all" in selection
+            ):
+                if Isort[i] in axes_list[contrib_index].indices:
+                    Ydatas.append(contrib_array[Isort[i], :])
+                    legends.append(contrib_axis.values[Isort[i]])
+                    new_color_list.append(color_list[i % (len(color_list))])
+            elif "all" in selection or all(
+                [s in contrib_axis.values[Isort[i]] for s in selection]
+            ):
+                Ydatas.append(contrib_array[Isort[i], :])
+                legends.append(contrib_axis.values[Isort[i]])
+                new_color_list.append(color_list[i % (len(color_list))])
+        sel_str = ""
+        if "all" not in selection:
+            if "stator" in selection:
+                sel_str += " applied to stator"
+            elif "rotor" in selection:
+                sel_str += " applied to rotor"
+            if "radial" in selection:
+                sel_str += " in radial direction"
+            elif "circ." in selection:
+                sel_str += " in circumferential direction"
+            title = " ".join(selection).capitalize()
+        else:
+            title = axes_dict[contribution_name].capitalize()
+        ylabel = name + " contribution [%]"
+        title = "Contribution of magnetic Load Cases" + sel_str
+
     # Deactivate legend if only one item
     if type_plot == "point":
         legends = []
@@ -613,6 +739,8 @@ def plot_2D_Data(
                 # Deactivate the option
                 fund_harm = None
 
+        if is_export:
+            return Xdatas, Ydatas, title, xlabel, ylabel, legends
         plot_2D(
             Xdatas,
             Ydatas,
@@ -661,39 +789,23 @@ def plot_2D_Data(
         if annotations is not None:
             try:
                 annot = list()
-                axis_along = self.get_axes(annotations[0])[0]
-                axis_op = self.get_axes(annotations[1])[0]
-                operation = annotations[2]
-                arg_list_new = []
-                if self.unit == "W":
-                    op = "=sum"
-                else:
-                    op = "=rss"
-                for axis in self.get_axes():
-                    if axis.name not in [axis_along.name, axis_op.name]:
-                        arg_list_new.append(axis.name + op)
-                    else:
-                        arg_list_new.append(axis.name)
-                data2 = self.get_data_along(*arg_list_new, unit=unit)
-                arg_list_new = []
-                for arg in arg_list_along:
-                    if axis_along.name in arg or axis_op.name in arg:
-                        arg_list_new.append(arg.replace("=sum", ""))
-                result = data2.get_magnitude_along(*arg_list_new)
-                for ii in range(len(result[annotations[0]])):
-                    if operation == "max":
+                for ii in range(len(self.get_axes(annotations[0])[0].get_values())):
+                    if annotations[2] == "max":
                         index = argmax(take(result[self.symbol], ii, axis=0))
-                        annot.append(
-                            "main "
-                            + annotations[1].rstrip("s")
-                            + ": "
-                            + axis_op.get_values()[index]
-                        )
+                        annot.append("main " + annotations[1].rstrip("s") + ": ")
+                # Keep only requested indices
+                annot = array(annot)[
+                    axes_list[
+                        [axis.name for axis in axes_list].index(annotations[0])
+                    ].indices
+                ].tolist()
                 if len(overall_axes) != 0:
                     annot.insert(0, "Overall")
             except Exception:
                 pass
 
+        if is_export:
+            return Xdatas, Ydatas, title, xlabel, ylabel, legends
         plot_2D(
             Xdatas,
             Ydatas,

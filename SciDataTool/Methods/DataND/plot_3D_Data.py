@@ -20,6 +20,7 @@ from numpy import (
     ceil,
     floor,
     argmin,
+    logical_and,
 )
 
 
@@ -51,7 +52,7 @@ def plot_3D_Data(
     is_logscale_z=False,
     thresh=None,
     is_switch_axes=False,
-    colormap="RdBu_r",
+    colormap="jet",
     win_title=None,
     font_name="arial",
     font_size_title=12,
@@ -67,6 +68,8 @@ def plot_3D_Data(
     marker_color="k",
     is_shading_flat=None,
     is_hide_annotation=False,
+    is_filter_x=True,
+    is_filter_y=True,
 ):
     """Plots a field as a function of two axes
 
@@ -458,13 +461,20 @@ def plot_3D_Data(
         indices_x = np_any(where(Zdata > threshold, True, False), axis=1)
         indices_y = np_any(where(Zdata > threshold, True, False), axis=0)
 
-        xticks = Xdata[indices_x]
+        if is_filter_x:
+            xticks = Xdata[indices_x]
+            if xticklabels is not None:
+                xticklabels = xticklabels[indices_x]
+        else:
+            xticks = Xdata
+        if is_filter_y:
+            yticks = Ydata[indices_y]
+            if yticklabels is not None:
+                yticklabels = yticklabels[indices_y]
+        else:
+            yticks = Ydata
+
         annotation_threshold = None
-        if xticklabels is not None:
-            xticklabels = xticklabels[indices_x]
-        yticks = Ydata[indices_y]
-        if yticklabels is not None:
-            yticklabels = yticklabels[indices_y]
         if annotations is not None:
             annotation_threshold = threshold
         if is_auto_range:
@@ -532,12 +542,12 @@ def plot_3D_Data(
         y_max = y_max * 1.2
 
         if len(xticks) == 0 or (
-            len(xticks) > 20
+            logical_and(xticks > x_min, xticks < x_max).sum() > 20
             and not axes_list[list(result.keys()).index(axes_names[0])].is_components
         ):
             xticks = None
         if len(yticks) == 0 or (
-            len(yticks) > 20
+            logical_and(yticks > y_min, yticks < y_max).sum() > 20
             and not axes_list[list(result.keys()).index(axes_names[1])].is_components
         ):
             yticks = None

@@ -5,7 +5,7 @@ from SciDataTool.Functions.conversions import (
     xyz_to_rphiz,
     rphiz_to_xyz_field,
 )
-from SciDataTool.GUI.WVectorSelector.WVectorSelector import REV_COMP_DICT
+from SciDataTool.Functions.Plot import REV_COMP_DICT
 from SciDataTool.Functions.Load.import_class import import_class
 
 
@@ -21,7 +21,7 @@ def plot_2D_Data(
     legend_list=[],
     color_list=None,
     linestyles=None,
-    linewidth_list=[2],
+    linewidth_list=[1.5],
     save_path=None,
     x_min=None,
     x_max=None,

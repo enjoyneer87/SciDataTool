@@ -21,7 +21,7 @@ def plot_2D(
     legend_list=[""],
     color_list=None,
     linestyle_list=None,
-    linewidth_list=[2],
+    linewidth_list=[1.5],
     title="",
     xlabel="",
     ylabel="",
@@ -412,6 +412,63 @@ def plot_2D(
 
         if xticks is None:
             plt.xticks([])
+
+    elif type_plot == "stack":
+        ax.plot(
+            Xdatas[i_Xdatas[0]],
+            Ydatas[0],
+            color=color_list[0],
+            label=legend_list[0],
+            linewidth=linewidth_list[0],
+            ls=linestyle_list[0],
+            picker=True,
+            pickradius=5,
+        )
+        if len(Ydatas) > 1:
+            stacks = ax.stackplot(
+                Xdatas[i_Xdatas[0]],
+                Ydatas[1:] * Ydatas[0] / 100,
+                colors=color_list[1:],
+                labels=legend_list[1:],
+            )
+            if (
+                len(
+                    [
+                        i
+                        for i, n in enumerate(color_list)
+                        if n in color_list[i + 1 :] and n not in color_list[:i]
+                    ]
+                )
+                > 0
+            ):
+                # Add hatches if color_list too small
+                hatches = ["", "//", "\\", "+"]
+                ncolors = [i for i, n in enumerate(color_list) if n in color_list[:i]][
+                    0
+                ] - 1
+                for ii, stack in enumerate(stacks):
+                    stack.set_hatch(hatches[ii // ncolors])
+        if xticks is not None:
+            ax.xaxis.set_ticks(xticks)
+            plt.xticks(rotation=90, ha="center", va="top")
+        ax.yaxis.set_ticks([])
+        if xticklabels is not None:
+            if is_indlabels:
+                ax.set_xticklabels([i + 1 for i in range(len(xticklabels))], rotation=0)
+                ax.annotate(
+                    xticklabels, (Xdatas[i_Xdatas[i]], Ydatas[i]), visible=False
+                )
+            else:
+                ax.set_xticklabels(xticklabels, rotation=90)
+        if annotations is not None:
+            for txt in annotations:
+                ax.annotate(
+                    txt,
+                    (Xdatas[i_Xdatas[i]][0], Ydatas[i][0]),
+                    rotation=45,
+                    family=font_name,
+                    visible=False,
+                )
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)

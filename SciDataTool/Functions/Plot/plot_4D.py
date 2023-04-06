@@ -13,7 +13,7 @@ def plot_4D(
     Zdata,
     Sdata=None,
     is_same_size=False,
-    colormap="RdBu_r",
+    colormap="jet",
     x_min=None,
     x_max=None,
     y_min=None,
@@ -161,9 +161,9 @@ def plot_4D(
 
     if is_same_size:
         Sdata = zeros_like(Zdata)
-        Sdata[Zdata > z_max / 1e4] = 40
+        Sdata[Zdata > z_max / 1e4] = 30
     elif Sdata is None:
-        Sdata = 500 * Zdata / z_max
+        Sdata = 300 * Zdata / z_max
 
     # Switch axes
     if is_switch_axes:
